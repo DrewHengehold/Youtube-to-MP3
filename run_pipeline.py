@@ -8,6 +8,7 @@ def main():
     print("=== Apple Music to MP3 Pipeline ===")
     
     # Configuration
+    # Eventually we want this to pull from the web
     INPUT_HTML = "dummy_playlist.html"
     OUTPUT_CSV = "playlist.csv"
     
