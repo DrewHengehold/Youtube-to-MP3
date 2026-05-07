@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Playlist → MP3</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --surface2: #242424;
+      --border: #2e2e2e;
+      --red: #ff2d2d;
+      --red-hover: #ff5555;
+      --text: #f1f1f1;
+      --muted: #777;
+      --success: #22c55e;
+      --error: #f87171;
+      --radius: 10px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .logo {
+      width: 30px; height: 30px;
+      background: var(--red); border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; flex-shrink: 0;
+    }
+    header h1 { font-size: 1rem; font-weight: 600; letter-spacing: -0.02em; }
+
+    /* ── Step nav ── */
+    .steps {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto; flex-shrink: 0;
+      scrollbar-width: none;
+    }
+    .steps::-webkit-scrollbar { display: none; }
+
+    .step-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 20px; color: var(--muted);
+      font-size: 0.82rem; white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .step-item.active { color: var(--text); border-bottom-color: var(--red); }
+    .step-item.done   { color: var(--success); }
+
+    .step-num {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.68rem; font-weight: 700; flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .step-item.active .step-num { background: var(--red); color: #fff; }
+    .step-item.done   .step-num { background: var(--success); color: #fff; }
+
+    /* ── Main ── */
+    main {
+      flex: 1;
+      padding: 32px 24px 120px;
+      width: 100%; max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+
+    /* ── Buttons ── */
+    .btn {
+      background: var(--red); color: #fff;
+      border: none; padding: 11px 18px;
+      border-radius: var(--radius);
+      font-size: 0.9rem; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: background 0.15s, transform 0.1s, opacity 0.15s;
+    }
+    .btn:hover:not(:disabled) { background: var(--red-hover); }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-ghost {
+      background: transparent; border: 1px solid var(--border); color: var(--text);
+    }
+    .btn-ghost:hover:not(:disabled) { background: var(--surface2); }
+    .btn-green { background: var(--success); }
+    .btn-green:hover:not(:disabled) { background: #16a34a; }
+
+    /* ── Shared loading / error ── */
+    .loading {
+      display: none; align-items: center; gap: 10px;
+      color: var(--muted); margin-top: 18px;
+      justify-content: center; font-size: 0.88rem;
+    }
+    .loading.active { display: flex; }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--red);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box {
+      background: rgba(248,113,113,0.08);
+      border: 1px solid rgba(248,113,113,0.35);
+      color: var(--error);
+      padding: 11px 14px; border-radius: var(--radius);
+      margin-top: 14px; font-size: 0.88rem;
+      display: none; text-align: left;
+    }
+    .error-box.active { display: block; }
+
+    /* ── Step 1: URL input ── */
+    .url-wrap {
+      max-width: 580px; margin: 64px auto 0; text-align: center;
+    }
+    .url-wrap h2 {
+      font-size: 2.1rem; font-weight: 700;
+      letter-spacing: -0.04em; margin-bottom: 6px;
+    }
+    .url-wrap .sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 28px; }
+    .input-row { display: flex; gap: 8px; }
+    .input-row input {
+      flex: 1; background: var(--surface);
+      border: 1px solid var(--border); color: var(--text);
+      padding: 11px 14px; border-radius: var(--radius);
+      font-size: 0.92rem; outline: none;
+      transition: border-color 0.2s; min-width: 0;
+    }
+    .input-row input:focus { border-color: var(--red); }
+    .input-row input::placeholder { color: var(--muted); }
+
+    /* ── Step 2: YouTube matching progress ── */
+    .match-wrap {
+      max-width: 640px; margin: 0 auto; padding-top: 8px;
+    }
+    .match-wrap h2 {
+      font-size: 1.5rem; font-weight: 700;
+      letter-spacing: -0.02em; margin-bottom: 5px;
+    }
+    .match-sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 28px; }
+
+    .bar-track {
+      background: var(--surface); border-radius: 100px;
+      height: 7px; overflow: hidden; margin-bottom: 8px;
+    }
+    .bar-fill {
+      height: 100%; background: var(--red); border-radius: 100px;
+      transition: width 0.4s ease;
+    }
+    .bar-label {
+      text-align: right; font-size: 0.8rem;
+      color: var(--muted); margin-bottom: 22px;
+    }
+
+    /* Scrollable list of songs being matched */
+    .match-list {
+      display: flex; flex-direction: column; gap: 7px;
+      max-height: 460px; overflow-y: auto; padding-right: 4px;
+    }
+    .match-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; background: var(--surface);
+      border-radius: 8px; font-size: 0.83rem;
+    }
+    .match-art {
+      width: 36px; height: 36px; border-radius: 5px;
+      object-fit: cover; flex-shrink: 0;
+      background: var(--surface2);
+    }
+    .match-info { flex: 1; overflow: hidden; }
+    .match-title {
+      font-weight: 600; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+    .match-artist { font-size: 0.74rem; color: var(--muted); }
+    .match-status {
+      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      background: var(--border); color: var(--muted);
+      transition: background 0.2s, color 0.2s;
+    }
+    .match-status.ok    { background: rgba(34,197,94,0.15); color: var(--success); }
+    .match-status.miss  { background: rgba(248,113,113,0.15); color: var(--error); }
+    .match-status.spin  { background: transparent; }
+    .match-status.spin::after {
+      content: "";
+      display: block; width: 13px; height: 13px;
+      border: 2px solid var(--border);
+      border-top-color: var(--red);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    .proceed-row {
+      margin-top: 20px; display: flex;
+      align-items: center; gap: 12px;
+    }
+
+    /* ── Step 3: Video selection ── */
+    .sel-header {
+      display: flex; align-items: flex-start;
+      justify-content: space-between;
+      flex-wrap: wrap; gap: 12px; margin-bottom: 18px;
+    }
+    .sel-header h2 {
+      font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em;
+    }
+    .sel-header .sub { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
+
+    .toolbar {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .toolbar input[type="search"] {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); padding: 7px 11px;
+      border-radius: var(--radius); font-size: 0.82rem; outline: none;
+      width: 180px; transition: border-color 0.2s;
+    }
+    .toolbar input[type="search"]:focus { border-color: var(--red); }
+    .toolbar input[type="search"]::placeholder { color: var(--muted); }
+    .toolbar .btn { padding: 7px 12px; font-size: 0.8rem; }
+
+    /* ── Video grid ── */
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+    }
+
+    .video-card {
+      background: var(--surface);
+      border: 2px solid transparent;
+      border-radius: var(--radius);
+      overflow: hidden; cursor: pointer;
+      transition: border-color 0.18s, transform 0.15s, background 0.15s;
+      user-select: none;
+    }
+    .video-card:hover { background: var(--surface2); transform: translateY(-2px); }
+    .video-card.selected { border-color: var(--red); }
+    .video-card.hidden { display: none; }
+
+    /* Thumbnail area */
+    .v-thumb {
+      position: relative; padding-bottom: 56.25%;
+      background: #111; overflow: hidden;
+    }
+    .v-thumb img {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%; object-fit: cover;
+    }
+
+    /* Apple artwork fallback (square crop) */
+    .v-thumb .art-img {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%; object-fit: cover;
+      /* darken slightly so check badge is visible */
+      filter: brightness(0.9);
+    }
+
+    /* Preview overlay on hover */
+    .preview-overlay {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.25);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; transition: opacity 0.18s;
+    }
+    .v-thumb:hover .preview-overlay { opacity: 1; }
+
+    .preview-btn {
+      background: rgba(0,0,0,0.75); color: #fff;
+      border: none; padding: 7px 13px; border-radius: 20px;
+      font-size: 0.75rem; cursor: pointer;
+      display: flex; align-items: center; gap: 5px;
+      backdrop-filter: blur(4px); transition: background 0.15s;
+    }
+    .preview-btn:hover { background: var(--red); }
+
+    /* Check badge top-right */
+    .check-badge {
+      position: absolute; top: 7px; right: 7px;
+      width: 22px; height: 22px;
+      background: var(--red); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      opacity: 0; transform: scale(0.5);
+      transition: opacity 0.18s, transform 0.18s;
+      pointer-events: none;
+    }
+    .video-card.selected .check-badge { opacity: 1; transform: scale(1); }
+
+    .dur-badge {
+      position: absolute; bottom: 5px; right: 5px;
+      background: rgba(0,0,0,0.82); color: #fff;
+      font-size: 0.68rem; padding: 2px 5px; border-radius: 4px;
+      pointer-events: none;
+    }
+
+    .v-info { padding: 9px 11px 11px; }
+    .v-title {
+      font-size: 0.82rem; font-weight: 600; line-height: 1.4; margin-bottom: 3px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .v-channel { font-size: 0.72rem; color: var(--muted); }
+
+    /* "No match" card state */
+    .video-card.no-match { opacity: 0.45; cursor: default; }
+    .video-card.no-match:hover { transform: none; }
+    .no-match-badge {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; color: var(--error); font-weight: 600;
+      pointer-events: none;
+    }
+
+    /* ── Sticky download bar (step 3) ── */
+    .dl-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: rgba(15,15,15,0.96);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--border);
+      padding: 12px 24px;
+      display: none;
+      align-items: center; justify-content: space-between;
+      gap: 16px; z-index: 100;
+    }
+    .dl-bar.visible { display: flex; }
+    .dl-bar-left { font-size: 0.88rem; color: var(--muted); }
+    .dl-bar-left strong { color: var(--text); }
+
+    /* ── Step 4: Download progress ── */
+    .progress-wrap { max-width: 680px; margin: 0 auto; padding-top: 8px; }
+    .progress-wrap h2 {
+      font-size: 1.5rem; font-weight: 700;
+      letter-spacing: -0.02em; margin-bottom: 5px;
+    }
+    .progress-sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 28px; }
+
+    .songs-list {
+      display: flex; flex-direction: column; gap: 7px;
+      max-height: 420px; overflow-y: auto; padding-right: 4px;
+    }
+    .song-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; background: var(--surface);
+      border-radius: 8px; font-size: 0.85rem;
+    }
+    .song-icon {
+      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+      background: var(--border); color: var(--muted);
+      transition: background 0.2s, color 0.2s;
+    }
+    .song-icon.ok    { background: rgba(34,197,94,0.15); color: var(--success); }
+    .song-icon.error { background: rgba(248,113,113,0.15); color: var(--error); }
+    .song-icon.spin  { background: transparent; }
+    .song-icon.spin::before {
+      content: "";
+      display: block; width: 14px; height: 14px;
+      border: 2px solid var(--border); border-top-color: var(--red);
+      border-radius: 50%; animation: spin 0.75s linear infinite;
+    }
+    .song-name {
+      flex: 1; overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap;
+    }
+
+    /* ── Step 5: Done ── */
+    .done-wrap { max-width: 520px; margin: 40px auto 0; text-align: center; }
+    .done-icon {
+      width: 76px; height: 76px;
+      background: rgba(34,197,94,0.12);
+      border-radius: 50%; display: flex;
+      align-items: center; justify-content: center;
+      font-size: 34px; margin: 0 auto 22px;
+    }
+    .done-wrap h2 {
+      font-size: 1.8rem; font-weight: 700;
+      letter-spacing: -0.03em; margin-bottom: 7px;
+    }
+    .done-wrap .sub { color: var(--muted); font-size: 0.92rem; margin-bottom: 30px; }
+    .done-note {
+      font-size: 0.76rem; color: var(--muted);
+      margin-top: 14px; line-height: 1.6;
+    }
+    .done-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+    /* ── Preview modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.88); z-index: 1000;
+      display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-box {
+      background: var(--surface); border-radius: 12px;
+      overflow: hidden; width: 100%; max-width: 820px;
+    }
+    .modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 12px;
+    }
+    .modal-title {
+      font-size: 0.88rem; font-weight: 600;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .modal-close {
+      background: none; border: none; color: var(--muted);
+      font-size: 1.1rem; cursor: pointer; padding: 3px;
+      line-height: 1; transition: color 0.15s; flex-shrink: 0;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-frame { position: relative; padding-bottom: 56.25%; background: #000; }
+    .modal-frame iframe {
+      position: absolute; inset: 0; width: 100%; height: 100%; border: none;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #444; }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      main { padding: 24px 14px 120px; }
+      .url-wrap { margin-top: 40px; }
+      .url-wrap h2 { font-size: 1.5rem; }
+      .input-row { flex-direction: column; }
+      .video-grid { grid-template-columns: 1fr 1fr; }
+      .sel-header { flex-direction: column; }
+    }
+    @media (max-width: 380px) {
+      .video-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">♪</div>
+  <h1>Apple Music Playlist → MP3</h1>
+</header>
+
+<nav class="steps">
+  <div class="step-item active" id="si-1"><div class="step-num">1</div>Enter URL</div>
+  <div class="step-item"        id="si-2"><div class="step-num">2</div>Find on YouTube</div>
+  <div class="step-item"        id="si-3"><div class="step-num">3</div>Review &amp; Select</div>
+  <div class="step-item"        id="si-4"><div class="step-num">4</div>Downloading</div>
+  <div class="step-item"        id="si-5"><div class="step-num">5</div>Download ZIP</div>
+</nav>
+
+<main>
+
+  <!-- ── Step 1: URL ── -->
+  <div class="step-panel active" id="p1">
+    <div class="url-wrap">
+      <h2>Playlist → MP3</h2>
+      <p class="sub">Paste an Apple Music playlist link to get started</p>
+      <div class="input-row">
+        <input type="url" id="url-input"
+               placeholder="https://music.apple.com/us/playlist/…"
+               autocomplete="off" spellcheck="false">
+        <button class="btn" id="fetch-btn" onclick="fetchPlaylist()">Fetch</button>
+      </div>
+      <div class="loading" id="fetch-loading">
+        <div class="spinner"></div>
+        <span>Fetching playlist…</span>
+      </div>
+      <div class="error-box" id="fetch-error"></div>
+    </div>
+  </div>
+
+  <!-- ── Step 2: YouTube matching ── -->
+  <div class="step-panel" id="p2">
+    <div class="match-wrap">
+      <h2>Finding songs on YouTube</h2>
+      <div class="match-sub" id="match-sub">Searching for matches…</div>
+
+      <div class="bar-track">
+        <div class="bar-fill" id="match-bar" style="width:0%"></div>
+      </div>
+      <div class="bar-label" id="match-label">0 / 0</div>
+
+      <div class="match-list" id="match-list"></div>
+
+      <div class="proceed-row" id="proceed-row" style="display:none;">
+        <button class="btn" onclick="proceedToSelect()">
+          Review &amp; Select →
+        </button>
+        <span style="font-size:0.82rem;color:var(--muted);" id="proceed-note"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Selection ── -->
+  <div class="step-panel" id="p3">
+    <div class="sel-header">
+      <div>
+        <h2 id="pl-title">Playlist</h2>
+        <div class="sub" id="sel-count">0 of 0 selected</div>
+      </div>
+      <div class="toolbar">
+        <input type="search" id="filter-input" placeholder="Filter…"
+               oninput="filterVideos(this.value)">
+        <button class="btn btn-ghost" onclick="selectAll()">Select All</button>
+        <button class="btn btn-ghost" onclick="deselectAll()">Deselect All</button>
+      </div>
+    </div>
+    <div class="video-grid" id="video-grid"></div>
+
+    <div class="dl-bar" id="dl-bar">
+      <div class="dl-bar-left"><strong id="bar-count">0</strong> songs selected</div>
+      <button class="btn" id="dl-btn" disabled onclick="startDownload()">
+        Download Selected
+      </button>
+    </div>
+  </div>
+
+  <!-- ── Step 4: Download progress ── -->
+  <div class="step-panel" id="p4">
+    <div class="progress-wrap">
+      <h2 id="prog-title">Downloading…</h2>
+      <div class="progress-sub" id="prog-sub">Preparing downloads</div>
+
+      <div class="bar-track">
+        <div class="bar-fill" id="dl-bar-fill" style="width:0%"></div>
+      </div>
+      <div class="bar-label" id="dl-bar-label">0 / 0</div>
+
+      <div class="songs-list" id="songs-list"></div>
+    </div>
+  </div>
+
+  <!-- ── Step 5: Done ── -->
+  <div class="step-panel" id="p5">
+    <div class="done-wrap">
+      <div class="done-icon">✓</div>
+      <h2 id="done-title">Ready!</h2>
+      <p class="sub" id="done-sub">Your playlist has been converted to MP3</p>
+      <div class="done-actions">
+        <button class="btn btn-green" onclick="downloadZip()"
+                style="font-size:1rem;padding:13px 30px;">
+          ⬇&nbsp; Download ZIP
+        </button>
+        <button class="btn btn-ghost" onclick="startOver()">Start Over</button>
+      </div>
+      <p class="done-note">
+        Files are deleted from the server 2 minutes after you download,<br>
+        or automatically within 1 hour if you don't.
+      </p>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── Preview modal ── -->
+<div class="modal-overlay" id="modal" onclick="closePreview()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div class="modal-title" id="modal-title">Preview</div>
+      <button class="modal-close" onclick="closePreview()">✕</button>
+    </div>
+    <div class="modal-frame">
+      <iframe id="modal-iframe" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const S = {
+  step: 1,
+  playlistTitle: "",
+  searchJobId: null,
+  dlJobId: null,
+  searchTimer: null,
+  dlTimer: null,
+  // All matched songs (from search job)
+  songs: [],          // [{title, artist, artwork_url, yt_id, yt_url, yt_thumbnail, yt_channel, yt_duration, matched}]
+  selected: new Set(),
+};
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function showStep(n) {
+  document.querySelectorAll(".step-panel").forEach((el, i) => {
+    el.classList.toggle("active", i + 1 === n);
+  });
+  document.querySelectorAll(".step-item").forEach((el, i) => {
+    const num = i + 1;
+    el.classList.remove("active", "done");
+    if (num === n) el.classList.add("active");
+    else if (num < n) el.classList.add("done");
+  });
+  document.getElementById("dl-bar").classList.toggle("visible", n === 3);
+  S.step = n;
+}
+
+function setError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.toggle("active", !!msg);
+}
+
+function durationStr(ms) {
+  if (!ms) return "—";
+  const tot = Math.round(ms / 1000);
+  const m = Math.floor(tot / 60), s = tot % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// ── Step 1: Fetch playlist ─────────────────────────────────────────────────
+async function fetchPlaylist() {
+  const url = document.getElementById("url-input").value.trim();
+  if (!url) return;
+
+  document.getElementById("fetch-btn").disabled = true;
+  document.getElementById("fetch-loading").classList.add("active");
+  setError("fetch-error", "");
+
+  try {
+    const res = await fetch("/api/fetch-playlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "Fetch failed");
+
+    S.searchJobId = data.job_id;
+    S.playlistTitle = data.playlist_title;
+    document.getElementById("pl-title").textContent = data.playlist_title;
+
+    // Pre-populate match list with stubs (no YouTube data yet)
+    buildMatchList(data.songs, data.total);
+    showStep(2);
+    startSearchPolling();
+
+  } catch (err) {
+    setError("fetch-error", err.message);
+  } finally {
+    document.getElementById("fetch-btn").disabled = false;
+    document.getElementById("fetch-loading").classList.remove("active");
+  }
+}
+
+document.getElementById("url-input").addEventListener("keydown", e => {
+  if (e.key === "Enter") fetchPlaylist();
+});
+
+// ── Step 2: YouTube matching progress ─────────────────────────────────────
+function buildMatchList(stubs, total) {
+  const list = document.getElementById("match-list");
+  list.innerHTML = "";
+  document.getElementById("match-bar").style.width = "0%";
+  document.getElementById("match-label").textContent = `0 / ${total}`;
+  document.getElementById("match-sub").textContent = "Searching YouTube for each song…";
+
+  stubs.forEach((s, i) => {
+    const row = document.createElement("div");
+    row.className = "match-row";
+    row.id = `mr-${i}`;
+    row.innerHTML = `
+      <img class="match-art" src="${esc(s.artwork_url)}" alt=""
+           onerror="this.style.background='var(--surface2)'">
+      <div class="match-info">
+        <div class="match-title">${esc(s.title)}</div>
+        <div class="match-artist">${esc(s.artist)}</div>
+      </div>
+      <div class="match-status spin" id="ms-${i}"></div>`;
+    list.appendChild(row);
+  });
+}
+
+function startSearchPolling() {
+  if (S.searchTimer) clearInterval(S.searchTimer);
+  S.searchTimer = setInterval(pollSearch, 1500);
+}
+
+async function pollSearch() {
+  if (!S.searchJobId) return;
+  try {
+    const res = await fetch(`/api/search-progress/${S.searchJobId}`);
+    if (!res.ok) return;
+    const d = await res.json();
+
+    const pct = d.total > 0 ? Math.round((d.completed / d.total) * 100) : 0;
+    document.getElementById("match-bar").style.width = `${pct}%`;
+    document.getElementById("match-label").textContent = `${d.completed} / ${d.total}`;
+    document.getElementById("match-sub").textContent =
+      d.status === "done"
+        ? "All songs matched! Review the results below."
+        : `Searching… (${d.completed} of ${d.total} done)`;
+
+    // Update individual rows with results as they come in
+    d.matched.forEach(song => {
+      const idx = song.idx;
+      const statusEl = document.getElementById(`ms-${idx}`);
+      if (!statusEl) return;
+      if (song.matched) {
+        statusEl.className = "match-status ok";
+        statusEl.textContent = "✓";
+      } else {
+        statusEl.className = "match-status miss";
+        statusEl.textContent = "✕";
+      }
+    });
+
+    if (d.status === "done") {
+      clearInterval(S.searchTimer);
+      S.songs = d.matched; // store full results
+
+      const matched = d.matched.filter(s => s.matched).length;
+      const missed  = d.matched.length - matched;
+
+      document.getElementById("proceed-note").textContent =
+        missed > 0
+          ? `${matched} matched, ${missed} not found (unmatched songs will be greyed out)`
+          : `All ${matched} songs matched`;
+
+      document.getElementById("proceed-row").style.display = "flex";
+    }
+  } catch (_) { /* network hiccup */ }
+}
+
+function proceedToSelect() {
+  // Build the selection grid from search results
+  S.selected = new Set(
+    S.songs.filter(s => s.matched).map((_, i) => i)
+  );
+  renderGrid();
+  updateCount();
+  showStep(3);
+}
+
+// ── Step 3: Selection grid ─────────────────────────────────────────────────
+function renderGrid() {
+  const grid = document.getElementById("video-grid");
+  grid.innerHTML = "";
+
+  S.songs.forEach((song, i) => {
+    const card = document.createElement("div");
+    const isMatched = !!song.matched;
+    card.className = [
+      "video-card",
+      S.selected.has(i) ? "selected" : "",
+      isMatched ? "" : "no-match",
+    ].join(" ").trim();
+    card.dataset.idx = i;
+
+    // Use YouTube thumbnail if matched, else Apple artwork
+    const thumbSrc = isMatched
+      ? esc(song.yt_thumbnail)
+      : esc(song.artwork_url);
+
+    card.innerHTML = `
+      <div class="v-thumb">
+        <img class="art-img" src="${thumbSrc}" alt=""
+             onerror="this.src='${esc(song.artwork_url)}'">
+        ${isMatched ? `
+        <div class="preview-overlay">
+          <button class="preview-btn"
+                  data-vid="${esc(song.yt_id)}"
+                  data-title="${esc(song.title)}">▶ Preview</button>
+        </div>` : `<div class="no-match-badge">No YouTube match</div>`}
+        <div class="check-badge">✓</div>
+        <div class="dur-badge">${esc(song.yt_duration || durationStr(song.duration_ms))}</div>
+      </div>
+      <div class="v-info">
+        <div class="v-title">${esc(song.title)}</div>
+        <div class="v-channel">${esc(isMatched ? song.yt_channel : song.artist)}</div>
+      </div>`;
+
+    grid.appendChild(card);
+  });
+
+  // Single delegated listener (removed on re-render automatically since innerHTML)
+  grid.addEventListener("click", e => {
+    const prevBtn = e.target.closest(".preview-btn");
+    if (prevBtn) { openPreview(prevBtn.dataset.vid, prevBtn.dataset.title); return; }
+    const card = e.target.closest(".video-card");
+    if (card && !card.classList.contains("no-match")) {
+      toggleSelect(Number(card.dataset.idx));
+    }
+  });
+}
+
+function toggleSelect(idx) {
+  S.selected.has(idx) ? S.selected.delete(idx) : S.selected.add(idx);
+  const card = document.querySelector(`.video-card[data-idx="${idx}"]`);
+  if (card) card.classList.toggle("selected", S.selected.has(idx));
+  updateCount();
+}
+
+function selectAll() {
+  S.songs.forEach((s, i) => { if (s.matched) S.selected.add(i); });
+  document.querySelectorAll(".video-card:not(.no-match)").forEach(c => c.classList.add("selected"));
+  updateCount();
+}
+
+function deselectAll() {
+  S.selected.clear();
+  document.querySelectorAll(".video-card").forEach(c => c.classList.remove("selected"));
+  updateCount();
+}
+
+function updateCount() {
+  const n = S.selected.size, total = S.songs.filter(s => s.matched).length;
+  document.getElementById("sel-count").textContent = `${n} of ${total} matched songs selected`;
+  document.getElementById("bar-count").textContent = n;
+  const btn = document.getElementById("dl-btn");
+  btn.disabled = n === 0;
+  btn.textContent = n > 0 ? `Download Selected (${n})` : "Download Selected";
+}
+
+function filterVideos(q) {
+  const lq = q.toLowerCase();
+  document.querySelectorAll(".video-card").forEach(card => {
+    const idx = Number(card.dataset.idx);
+    const song = S.songs[idx];
+    const match = !lq || !song ||
+      song.title.toLowerCase().includes(lq) ||
+      song.artist.toLowerCase().includes(lq);
+    card.classList.toggle("hidden", !match);
+  });
+}
+
+// ── Step 4: Download ──────────────────────────────────────────────────────
+async function startDownload() {
+  const selectedSongs = [...S.selected].map(i => S.songs[i]).filter(Boolean);
+  if (!selectedSongs.length) return;
+
+  // Build progress list
+  const list = document.getElementById("songs-list");
+  list.innerHTML = "";
+  selectedSongs.forEach((song, i) => {
+    const row = document.createElement("div");
+    row.className = "song-row";
+    row.id = `sr-${song.yt_id}`;
+    row.innerHTML = `<div class="song-icon" id="sicon-${song.yt_id}"></div>
+                     <div class="song-name">${esc(song.title)}</div>`;
+    list.appendChild(row);
+  });
+
+  showStep(4);
+
+  try {
+    const res = await fetch("/api/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        songs: selectedSongs.map(s => ({
+          id: s.yt_id,
+          title: s.title,
+          artist: s.artist,
+          album: s.album || "",
+          yt_id: s.yt_id,
+          yt_url: s.yt_url,
+          url: s.yt_url,
+        })),
+        playlist_title: S.playlistTitle,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || "Failed to start");
+    S.dlJobId = data.job_id;
+    startDlPolling();
+  } catch (err) {
+    document.getElementById("prog-title").textContent = "Error";
+    document.getElementById("prog-sub").textContent = err.message;
+  }
+}
+
+function startDlPolling() {
+  if (S.dlTimer) clearInterval(S.dlTimer);
+  S.dlTimer = setInterval(pollDownload, 1200);
+}
+
+async function pollDownload() {
+  if (!S.dlJobId) return;
+  try {
+    const res = await fetch(`/api/download-progress/${S.dlJobId}`);
+    if (!res.ok) return;
+    const d = await res.json();
+
+    const pct = d.total > 0 ? Math.round((d.completed / d.total) * 100) : 0;
+    document.getElementById("dl-bar-fill").style.width = `${pct}%`;
+    document.getElementById("dl-bar-label").textContent = `${d.completed} / ${d.total}`;
+    document.getElementById("prog-sub").textContent =
+      d.completed < d.total ? `Downloading… (${pct}%)` : "Packaging ZIP…";
+
+    d.completed_songs.forEach(s => {
+      const icon = document.getElementById(`sicon-${s.id}`);
+      if (!icon) return;
+      icon.className = `song-icon ${s.status}`;
+      icon.textContent = s.status === "ok" ? "✓" : "✕";
+    });
+
+    if (d.status === "done") {
+      clearInterval(S.dlTimer);
+      const ok   = d.completed_songs.filter(s => s.status === "ok").length;
+      const fail = d.completed_songs.filter(s => s.status === "error").length;
+      document.getElementById("done-title").textContent =
+        `${ok} song${ok !== 1 ? "s" : ""} ready`;
+      document.getElementById("done-sub").textContent =
+        fail > 0 ? `${ok} converted, ${fail} failed` : "All songs converted successfully";
+      showStep(5);
+    } else if (d.status === "error") {
+      clearInterval(S.dlTimer);
+      document.getElementById("prog-title").textContent = "Download Failed";
+      document.getElementById("prog-sub").textContent = d.error || "An error occurred";
+    }
+  } catch (_) { /* keep polling */ }
+}
+
+// ── Step 5: ZIP download ──────────────────────────────────────────────────
+function downloadZip() {
+  if (S.dlJobId) window.location.href = `/api/download-zip/${S.dlJobId}`;
+}
+
+function startOver() {
+  [S.searchJobId, S.dlJobId].forEach(id => {
+    if (id) navigator.sendBeacon(`/api/cleanup/${id}`);
+  });
+  if (S.searchTimer) { clearInterval(S.searchTimer); S.searchTimer = null; }
+  if (S.dlTimer)     { clearInterval(S.dlTimer);     S.dlTimer = null;     }
+  Object.assign(S, {
+    playlistTitle: "", searchJobId: null, dlJobId: null,
+    songs: [], selected: new Set(),
+  });
+  document.getElementById("url-input").value = "";
+  document.getElementById("video-grid").innerHTML = "";
+  document.getElementById("match-list").innerHTML = "";
+  document.getElementById("songs-list").innerHTML = "";
+  document.getElementById("proceed-row").style.display = "none";
+  showStep(1);
+}
+
+// ── Preview modal ─────────────────────────────────────────────────────────
+function openPreview(videoId, title) {
+  document.getElementById("modal-title").textContent = title;
+  document.getElementById("modal-iframe").src =
+    `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+  document.getElementById("modal").classList.add("active");
+}
+
+function closePreview() {
+  document.getElementById("modal-iframe").src = "";
+  document.getElementById("modal").classList.remove("active");
+}
+
+document.addEventListener("keydown", e => { if (e.key === "Escape") closePreview(); });
+
+// Cleanup on tab close
+window.addEventListener("beforeunload", () => {
+  [S.searchJobId, S.dlJobId].forEach(id => {
+    if (id) navigator.sendBeacon(`/api/cleanup/${id}`);
+  });
+});
+
+showStep(1);
+</script>
+</body>
+</html>
