@@ -4,461 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Playlist → MP3</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg: #0f0f0f;
-      --surface: #1a1a1a;
-      --surface2: #242424;
-      --border: #2e2e2e;
-      --red: #ff2d2d;
-      --red-hover: #ff5555;
-      --text: #f1f1f1;
-      --muted: #777;
-      --success: #22c55e;
-      --error: #f87171;
-      --radius: 10px;
-    }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* ── Header ── */
-    header {
-      display: flex; align-items: center; gap: 10px;
-      padding: 14px 24px;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .logo {
-      width: 30px; height: 30px;
-      background: var(--red); border-radius: 7px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 15px; flex-shrink: 0;
-    }
-    header h1 { font-size: 1rem; font-weight: 600; letter-spacing: -0.02em; }
-
-    /* ── Step nav ── */
-    .steps {
-      display: flex;
-      border-bottom: 1px solid var(--border);
-      overflow-x: auto; flex-shrink: 0;
-      scrollbar-width: none;
-    }
-    .steps::-webkit-scrollbar { display: none; }
-
-    .step-item {
-      display: flex; align-items: center; gap: 8px;
-      padding: 12px 20px; color: var(--muted);
-      font-size: 0.82rem; white-space: nowrap;
-      border-bottom: 2px solid transparent;
-      transition: color 0.2s, border-color 0.2s;
-    }
-    .step-item.active { color: var(--text); border-bottom-color: var(--red); }
-    .step-item.done   { color: var(--success); }
-
-    .step-num {
-      width: 20px; height: 20px; border-radius: 50%;
-      background: var(--border);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.68rem; font-weight: 700; flex-shrink: 0;
-      transition: background 0.2s;
-    }
-    .step-item.active .step-num { background: var(--red); color: #fff; }
-    .step-item.done   .step-num { background: var(--success); color: #fff; }
-
-    /* ── Main ── */
-    main {
-      flex: 1;
-      padding: 32px 24px 120px;
-      width: 100%; max-width: 1280px;
-      margin: 0 auto;
-    }
-
-    .step-panel { display: none; }
-    .step-panel.active { display: block; }
-
-    /* ── Buttons ── */
-    .btn {
-      background: var(--red); color: #fff;
-      border: none; padding: 11px 18px;
-      border-radius: var(--radius);
-      font-size: 0.9rem; font-weight: 600;
-      cursor: pointer; white-space: nowrap;
-      transition: background 0.15s, transform 0.1s, opacity 0.15s;
-    }
-    .btn:hover:not(:disabled) { background: var(--red-hover); }
-    .btn:active:not(:disabled) { transform: scale(0.97); }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .btn-ghost {
-      background: transparent; border: 1px solid var(--border); color: var(--text);
-    }
-    .btn-ghost:hover:not(:disabled) { background: var(--surface2); }
-    .btn-green { background: var(--success); }
-    .btn-green:hover:not(:disabled) { background: #16a34a; }
-
-    /* ── Shared loading / error ── */
-    .loading {
-      display: none; align-items: center; gap: 10px;
-      color: var(--muted); margin-top: 18px;
-      justify-content: center; font-size: 0.88rem;
-    }
-    .loading.active { display: flex; }
-    .spinner {
-      width: 18px; height: 18px;
-      border: 2px solid var(--border);
-      border-top-color: var(--red);
-      border-radius: 50%;
-      animation: spin 0.75s linear infinite; flex-shrink: 0;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .error-box {
-      background: rgba(248,113,113,0.08);
-      border: 1px solid rgba(248,113,113,0.35);
-      color: var(--error);
-      padding: 11px 14px; border-radius: var(--radius);
-      margin-top: 14px; font-size: 0.88rem;
-      display: none; text-align: left;
-    }
-    .error-box.active { display: block; }
-
-    /* ── Step 1: URL input ── */
-    .url-wrap {
-      max-width: 580px; margin: 64px auto 0; text-align: center;
-    }
-    .url-wrap h2 {
-      font-size: 2.1rem; font-weight: 700;
-      letter-spacing: -0.04em; margin-bottom: 6px;
-    }
-    .url-wrap .sub { color: var(--muted); font-size: 0.95rem; margin-bottom: 28px; }
-    .input-row { display: flex; gap: 8px; }
-    .input-row input {
-      flex: 1; background: var(--surface);
-      border: 1px solid var(--border); color: var(--text);
-      padding: 11px 14px; border-radius: var(--radius);
-      font-size: 0.92rem; outline: none;
-      transition: border-color 0.2s; min-width: 0;
-    }
-    .input-row input:focus { border-color: var(--red); }
-    .input-row input::placeholder { color: var(--muted); }
-
-    /* ── Step 2: YouTube matching progress ── */
-    .match-wrap {
-      max-width: 640px; margin: 0 auto; padding-top: 8px;
-    }
-    .match-wrap h2 {
-      font-size: 1.5rem; font-weight: 700;
-      letter-spacing: -0.02em; margin-bottom: 5px;
-    }
-    .match-sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 28px; }
-
-    .bar-track {
-      background: var(--surface); border-radius: 100px;
-      height: 7px; overflow: hidden; margin-bottom: 8px;
-    }
-    .bar-fill {
-      height: 100%; background: var(--red); border-radius: 100px;
-      transition: width 0.4s ease;
-    }
-    .bar-label {
-      text-align: right; font-size: 0.8rem;
-      color: var(--muted); margin-bottom: 22px;
-    }
-
-    /* Scrollable list of songs being matched */
-    .match-list {
-      display: flex; flex-direction: column; gap: 7px;
-      max-height: 460px; overflow-y: auto; padding-right: 4px;
-    }
-    .match-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 12px; background: var(--surface);
-      border-radius: 8px; font-size: 0.83rem;
-    }
-    .match-art {
-      width: 36px; height: 36px; border-radius: 5px;
-      object-fit: cover; flex-shrink: 0;
-      background: var(--surface2);
-    }
-    .match-info { flex: 1; overflow: hidden; }
-    .match-title {
-      font-weight: 600; overflow: hidden;
-      text-overflow: ellipsis; white-space: nowrap;
-    }
-    .match-artist { font-size: 0.74rem; color: var(--muted); }
-    .match-status {
-      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 700;
-      background: var(--border); color: var(--muted);
-      transition: background 0.2s, color 0.2s;
-    }
-    .match-status.ok    { background: rgba(34,197,94,0.15); color: var(--success); }
-    .match-status.miss  { background: rgba(248,113,113,0.15); color: var(--error); }
-    .match-status.spin  { background: transparent; }
-    .match-status.spin::after {
-      content: "";
-      display: block; width: 13px; height: 13px;
-      border: 2px solid var(--border);
-      border-top-color: var(--red);
-      border-radius: 50%;
-      animation: spin 0.75s linear infinite;
-    }
-
-    .proceed-row {
-      margin-top: 20px; display: flex;
-      align-items: center; gap: 12px;
-    }
-
-    /* ── Step 3: Video selection ── */
-    .sel-header {
-      display: flex; align-items: flex-start;
-      justify-content: space-between;
-      flex-wrap: wrap; gap: 12px; margin-bottom: 18px;
-    }
-    .sel-header h2 {
-      font-size: 1.3rem; font-weight: 700; letter-spacing: -0.02em;
-    }
-    .sel-header .sub { color: var(--muted); font-size: 0.82rem; margin-top: 2px; }
-
-    .toolbar {
-      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    }
-    .toolbar input[type="search"] {
-      background: var(--surface); border: 1px solid var(--border);
-      color: var(--text); padding: 7px 11px;
-      border-radius: var(--radius); font-size: 0.82rem; outline: none;
-      width: 180px; transition: border-color 0.2s;
-    }
-    .toolbar input[type="search"]:focus { border-color: var(--red); }
-    .toolbar input[type="search"]::placeholder { color: var(--muted); }
-    .toolbar .btn { padding: 7px 12px; font-size: 0.8rem; }
-
-    /* ── Video grid ── */
-    .video-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 14px;
-    }
-
-    .video-card {
-      background: var(--surface);
-      border: 2px solid transparent;
-      border-radius: var(--radius);
-      overflow: hidden; cursor: pointer;
-      transition: border-color 0.18s, transform 0.15s, background 0.15s;
-      user-select: none;
-    }
-    .video-card:hover { background: var(--surface2); transform: translateY(-2px); }
-    .video-card.selected { border-color: var(--red); }
-    .video-card.hidden { display: none; }
-
-    /* Thumbnail area */
-    .v-thumb {
-      position: relative; padding-bottom: 56.25%;
-      background: #111; overflow: hidden;
-    }
-    .v-thumb img {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%; object-fit: cover;
-    }
-
-    /* Apple artwork fallback (square crop) */
-    .v-thumb .art-img {
-      position: absolute; inset: 0;
-      width: 100%; height: 100%; object-fit: cover;
-      /* darken slightly so check badge is visible */
-      filter: brightness(0.9);
-    }
-
-    /* Preview overlay on hover */
-    .preview-overlay {
-      position: absolute; inset: 0;
-      background: rgba(0,0,0,0.25);
-      display: flex; align-items: center; justify-content: center;
-      opacity: 0; transition: opacity 0.18s;
-    }
-    .v-thumb:hover .preview-overlay { opacity: 1; }
-
-    .preview-btn {
-      background: rgba(0,0,0,0.75); color: #fff;
-      border: none; padding: 7px 13px; border-radius: 20px;
-      font-size: 0.75rem; cursor: pointer;
-      display: flex; align-items: center; gap: 5px;
-      backdrop-filter: blur(4px); transition: background 0.15s;
-    }
-    .preview-btn:hover { background: var(--red); }
-
-    /* Check badge top-right */
-    .check-badge {
-      position: absolute; top: 7px; right: 7px;
-      width: 22px; height: 22px;
-      background: var(--red); border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 700;
-      opacity: 0; transform: scale(0.5);
-      transition: opacity 0.18s, transform 0.18s;
-      pointer-events: none;
-    }
-    .video-card.selected .check-badge { opacity: 1; transform: scale(1); }
-
-    .dur-badge {
-      position: absolute; bottom: 5px; right: 5px;
-      background: rgba(0,0,0,0.82); color: #fff;
-      font-size: 0.68rem; padding: 2px 5px; border-radius: 4px;
-      pointer-events: none;
-    }
-
-    .v-info { padding: 9px 11px 11px; }
-    .v-title {
-      font-size: 0.82rem; font-weight: 600; line-height: 1.4; margin-bottom: 3px;
-      display: -webkit-box;
-      -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-    }
-    .v-channel { font-size: 0.72rem; color: var(--muted); }
-
-    /* "No match" card state */
-    .video-card.no-match { opacity: 0.45; cursor: default; }
-    .video-card.no-match:hover { transform: none; }
-    .no-match-badge {
-      position: absolute; inset: 0;
-      background: rgba(0,0,0,0.55);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.75rem; color: var(--error); font-weight: 600;
-      pointer-events: none;
-    }
-
-    /* ── Sticky download bar (step 3) ── */
-    .dl-bar {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      background: rgba(15,15,15,0.96);
-      backdrop-filter: blur(10px);
-      border-top: 1px solid var(--border);
-      padding: 12px 24px;
-      display: none;
-      align-items: center; justify-content: space-between;
-      gap: 16px; z-index: 100;
-    }
-    .dl-bar.visible { display: flex; }
-    .dl-bar-left { font-size: 0.88rem; color: var(--muted); }
-    .dl-bar-left strong { color: var(--text); }
-
-    /* ── Step 4: Download progress ── */
-    .progress-wrap { max-width: 680px; margin: 0 auto; padding-top: 8px; }
-    .progress-wrap h2 {
-      font-size: 1.5rem; font-weight: 700;
-      letter-spacing: -0.02em; margin-bottom: 5px;
-    }
-    .progress-sub { color: var(--muted); font-size: 0.88rem; margin-bottom: 28px; }
-
-    .songs-list {
-      display: flex; flex-direction: column; gap: 7px;
-      max-height: 420px; overflow-y: auto; padding-right: 4px;
-    }
-    .song-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 9px 12px; background: var(--surface);
-      border-radius: 8px; font-size: 0.85rem;
-    }
-    .song-icon {
-      width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 700;
-      background: var(--border); color: var(--muted);
-      transition: background 0.2s, color 0.2s;
-    }
-    .song-icon.ok    { background: rgba(34,197,94,0.15); color: var(--success); }
-    .song-icon.error { background: rgba(248,113,113,0.15); color: var(--error); }
-    .song-icon.spin  { background: transparent; }
-    .song-icon.spin::before {
-      content: "";
-      display: block; width: 14px; height: 14px;
-      border: 2px solid var(--border); border-top-color: var(--red);
-      border-radius: 50%; animation: spin 0.75s linear infinite;
-    }
-    .song-name {
-      flex: 1; overflow: hidden;
-      text-overflow: ellipsis; white-space: nowrap;
-    }
-
-    /* ── Step 5: Done ── */
-    .done-wrap { max-width: 520px; margin: 40px auto 0; text-align: center; }
-    .done-icon {
-      width: 76px; height: 76px;
-      background: rgba(34,197,94,0.12);
-      border-radius: 50%; display: flex;
-      align-items: center; justify-content: center;
-      font-size: 34px; margin: 0 auto 22px;
-    }
-    .done-wrap h2 {
-      font-size: 1.8rem; font-weight: 700;
-      letter-spacing: -0.03em; margin-bottom: 7px;
-    }
-    .done-wrap .sub { color: var(--muted); font-size: 0.92rem; margin-bottom: 30px; }
-    .done-note {
-      font-size: 0.76rem; color: var(--muted);
-      margin-top: 14px; line-height: 1.6;
-    }
-    .done-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-
-    /* ── Preview modal ── */
-    .modal-overlay {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.88); z-index: 1000;
-      display: none; align-items: center; justify-content: center;
-      padding: 20px;
-    }
-    .modal-overlay.active { display: flex; }
-    .modal-box {
-      background: var(--surface); border-radius: 12px;
-      overflow: hidden; width: 100%; max-width: 820px;
-    }
-    .modal-head {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 16px; border-bottom: 1px solid var(--border); gap: 12px;
-    }
-    .modal-title {
-      font-size: 0.88rem; font-weight: 600;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .modal-close {
-      background: none; border: none; color: var(--muted);
-      font-size: 1.1rem; cursor: pointer; padding: 3px;
-      line-height: 1; transition: color 0.15s; flex-shrink: 0;
-    }
-    .modal-close:hover { color: var(--text); }
-    .modal-frame { position: relative; padding-bottom: 56.25%; background: #000; }
-    .modal-frame iframe {
-      position: absolute; inset: 0; width: 100%; height: 100%; border: none;
-    }
-
-    /* ── Scrollbar ── */
-    ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #444; }
-
-    /* ── Responsive ── */
-    @media (max-width: 600px) {
-      main { padding: 24px 14px 120px; }
-      .url-wrap { margin-top: 40px; }
-      .url-wrap h2 { font-size: 1.5rem; }
-      .input-row { flex-direction: column; }
-      .video-grid { grid-template-columns: 1fr 1fr; }
-      .sel-header { flex-direction: column; }
-    }
-    @media (max-width: 380px) {
-      .video-grid { grid-template-columns: 1fr; }
-    }
-  </style>
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
@@ -468,11 +14,11 @@
 </header>
 
 <nav class="steps">
-  <div class="step-item active" id="si-1"><div class="step-num">1</div>Enter URL</div>
-  <div class="step-item"        id="si-2"><div class="step-num">2</div>Find on YouTube</div>
-  <div class="step-item"        id="si-3"><div class="step-num">3</div>Review &amp; Select</div>
-  <div class="step-item"        id="si-4"><div class="step-num">4</div>Downloading</div>
-  <div class="step-item"        id="si-5"><div class="step-num">5</div>Download ZIP</div>
+  <div class="step-item active" id="si-1" onclick="navigateTo(1)"><div class="step-num">1</div>Enter URL</div>
+  <div class="step-item"        id="si-2" onclick="navigateTo(2)"><div class="step-num">2</div>Find on YouTube</div>
+  <div class="step-item"        id="si-3" onclick="navigateTo(3)"><div class="step-num">3</div>Review &amp; Select</div>
+  <div class="step-item"        id="si-4" onclick="navigateTo(4)"><div class="step-num">4</div>Downloading</div>
+  <div class="step-item"        id="si-5" onclick="navigateTo(5)"><div class="step-num">5</div>Download ZIP</div>
 </nav>
 
 <main>
@@ -584,6 +130,9 @@
   <div class="modal-box" onclick="event.stopPropagation()">
     <div class="modal-head">
       <div class="modal-title" id="modal-title">Preview</div>
+      <a class="modal-yt-link" id="modal-yt-link" href="" target="_blank" rel="noopener">
+        Watch on YouTube ↗
+      </a>
       <button class="modal-close" onclick="closePreview()">✕</button>
     </div>
     <div class="modal-frame">
@@ -611,6 +160,21 @@ function esc(str) {
   return String(str ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function navigateTo(n) {
+  if (n === S.step) return;    // already here
+  if (n > S.step) return;      // can't skip forward via tab
+
+  // Going back to step 1 = full reset (cancels any running search)
+  if (n === 1) { startOver(); return; }
+
+  // Going back to step 2 = re-show match progress (search already ran)
+  // Going back to step 3 = re-show selection grid
+  // Don't allow jumping to step 4 (mid-download) via tab
+  if (n === 4) return;
+
+  showStep(n);
 }
 
 function showStep(n) {
@@ -696,7 +260,16 @@ function buildMatchList(stubs, total) {
            onerror="this.style.background='var(--surface2)'">
       <div class="match-info">
         <div class="match-title">${esc(s.title)}</div>
-        <div class="match-artist">${esc(s.artist)}</div>
+        <div class="match-artist">
+          ${esc(s.artist)}<span class="add-url-link" id="aul-${i}"
+            onclick="showManualInput(${i})">+ add URL</span>
+        </div>
+        <div class="manual-url-row" id="mur-${i}">
+          <input class="manual-url-input" id="mui-${i}" type="url"
+                 placeholder="Paste YouTube URL…"
+                 onkeydown="if(event.key==='Enter') applyManualUrl(${i})">
+          <button class="manual-url-apply" onclick="applyManualUrl(${i})">✓</button>
+        </div>
       </div>
       <div class="match-status spin" id="ms-${i}"></div>`;
     list.appendChild(row);
@@ -734,6 +307,8 @@ async function pollSearch() {
       } else {
         statusEl.className = "match-status miss";
         statusEl.textContent = "✕";
+        const addLink = document.getElementById(`aul-${idx}`);
+        if (addLink) addLink.classList.add("visible");
       }
     });
 
@@ -752,6 +327,52 @@ async function pollSearch() {
       document.getElementById("proceed-row").style.display = "flex";
     }
   } catch (_) { /* network hiccup */ }
+}
+
+function parseYouTubeId(url) {
+  try {
+    const u = new URL(url.trim());
+    if (u.hostname === "youtu.be") return u.pathname.slice(1).split("?")[0];
+    if (u.searchParams.get("v")) return u.searchParams.get("v");
+    const embed = u.pathname.match(/\/embed\/([^/?]+)/);
+    if (embed) return embed[1];
+  } catch (_) {}
+  return null;
+}
+
+function showManualInput(idx) {
+  document.getElementById(`mur-${idx}`).classList.add("visible");
+  document.getElementById(`mui-${idx}`).focus();
+}
+
+function applyManualUrl(idx) {
+  const input = document.getElementById(`mui-${idx}`);
+  const videoId = parseYouTubeId(input.value);
+  if (!videoId) {
+    input.style.borderColor = "var(--error)";
+    setTimeout(() => input.style.borderColor = "", 1200);
+    return;
+  }
+
+  // Update the song entry in S.songs (may not exist yet if search is still running)
+  if (!S.songs[idx]) S.songs[idx] = {};
+  Object.assign(S.songs[idx], {
+    idx,
+    matched: true,
+    yt_id: videoId,
+    yt_url: `https://www.youtube.com/watch?v=${videoId}`,
+    yt_thumbnail: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+    yt_channel: "Manual entry",
+    yt_duration: "—",
+  });
+
+  // Update the row UI
+  const statusEl = document.getElementById(`ms-${idx}`);
+  statusEl.className = "match-status ok";
+  statusEl.textContent = "✓";
+  document.getElementById(`aul-${idx}`).classList.remove("visible");
+  document.getElementById(`mur-${idx}`).classList.remove("visible");
+  input.value = "";
 }
 
 function proceedToSelect() {
@@ -968,16 +589,21 @@ function startOver() {
 }
 
 // ── Preview modal ─────────────────────────────────────────────────────────
+// Note: "Video unavailable" in the iframe means the video owner has disabled
+// embedding — this is a YouTube policy enforced per-video and cannot be bypassed.
+// The "Watch on YouTube ↗" link in the header always works as a fallback.
 function openPreview(videoId, title) {
-  document.getElementById("modal-title").textContent = title;
+  document.getElementById("modal-title").textContent = title || "";
+  document.getElementById("modal-yt-link").href = `https://www.youtube.com/watch?v=${videoId}`;
   document.getElementById("modal-iframe").src =
-    `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+    `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
   document.getElementById("modal").classList.add("active");
 }
 
 function closePreview() {
   document.getElementById("modal-iframe").src = "";
   document.getElementById("modal").classList.remove("active");
+  _previewVideoId = null;
 }
 
 document.addEventListener("keydown", e => { if (e.key === "Escape") closePreview(); });

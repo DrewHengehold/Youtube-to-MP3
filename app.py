@@ -190,7 +190,14 @@ def search_youtube_for_song(title: str, artist: str, duration_ms: int) -> dict |
         dur = entry.get("duration")
         if dur is None:
             continue
+        # Skip zero-view results — they're almost always removed/unavailable videos
+        # that still show up in search index but can't be downloaded.
+        if (entry.get("view_count") or 0) == 0:
+            continue
+        # Don't accept a match more than 60 s off — it's the wrong song.
         diff = abs(dur - target_seconds)
+        if diff > 60:
+            continue
         if diff < min_diff:
             min_diff = diff
             best = entry
@@ -344,9 +351,24 @@ def search_progress(job_id):
 
 def _download_one(args):
     idx, song, folder, job_id = args
-    title = song.get("title") or f"track_{idx + 1}"
+    title  = song.get("title")  or f"track_{idx + 1}"
+    artist = song.get("artist") or ""
+    album  = song.get("album")  or ""
     video_id = song.get("yt_id") or song.get("id") or str(idx)
-    safe_name = f"{idx + 1:03d} - {sanitize_filename(title)}"
+
+    # Filename: "Song Title - Artist Name"  (mirrors Apple Music convention)
+    safe_title  = sanitize_filename(title)
+    safe_artist = sanitize_filename(artist)
+    safe_name = f"{safe_title} - {safe_artist}" if safe_artist else safe_title
+
+    # Embed Apple Music metadata so the MP3 tags are correct regardless of
+    # which YouTube video was the source.
+    metadata_args = [
+        "-metadata", f"title={title}",
+        "-metadata", f"artist={artist}",
+    ]
+    if album:
+        metadata_args += ["-metadata", f"album={album}"]
 
     ydl_opts = {
         "format": "bestaudio/best",
@@ -356,6 +378,7 @@ def _download_one(args):
             "preferredcodec": "mp3",
             "preferredquality": "192",
         }],
+        "postprocessor_args": metadata_args,
         "quiet": True,
         "no_warnings": True,
         "socket_timeout": 60,
@@ -367,7 +390,17 @@ def _download_one(args):
             ydl.download([url])
         result = {"id": video_id, "title": title, "status": "ok"}
     except Exception as e:
-        result = {"id": video_id, "title": title, "status": "error", "error": str(e)}
+        msg = str(e)
+        # Surface the most useful part of yt-dlp error messages
+        if "not available" in msg.lower() or "unavailable" in msg.lower():
+            friendly = "Video not available (region-locked or removed)"
+        elif "private" in msg.lower():
+            friendly = "Video is private"
+        elif "age" in msg.lower():
+            friendly = "Age-restricted video"
+        else:
+            friendly = msg.split("\n")[0][:120]
+        result = {"id": video_id, "title": title, "status": "error", "error": friendly}
 
     with jobs_lock:
         if job_id in jobs:
